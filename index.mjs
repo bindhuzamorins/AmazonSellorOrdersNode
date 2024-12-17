@@ -6,14 +6,20 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { SignatureV4 } from '@aws-sdk/signature-v4';
 import { Hash } from '@aws-sdk/hash-node';
 import dotenv from 'dotenv';
-
+import mysql from 'mysql2/promise';
 // Load environment variables
 dotenv.config();
 
 // Get __dirname equivalent in ES module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
+const dbConfig = {
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'orders',
+  };
+  
 // Initialize S3 client (v3)
 const s3 = new S3Client({
   region: process.env.AWS_REGION || 'us-east-1',
@@ -72,6 +78,7 @@ export const handler = async (event) => {
     const apiUrl = 'https://sandbox.sellingpartnerapi-na.amazon.com/orders/v0/orders';
     const MarketplaceIds = event?.MarketplaceIds ;
     const CreatedAfter = event?.CreatedAfter;
+    const client_code = event?.client_code;
     // Set up request parameters
     // const params = {
     //   MarketplaceIds: event?.MarketplaceIds?.join(',') || 'ATVPDKIKX0DER', // Convert array to a comma-separated string
@@ -122,6 +129,111 @@ export const handler = async (event) => {
       headers: signedRequest.headers,
       params: signedRequest.query,
     });
+
+    const orderData = apiResponse.data;
+    const Orders = orderData?.payload?.Orders;
+
+     const connection = await mysql.createConnection(dbConfig);
+      
+          // Iterate over order items and store each item in the database
+          for (const order of Orders) {
+           const {
+
+                AmazonOrderId,
+                PurchaseDate,
+                LastUpdateDate,
+                OrderStatus,
+                FulfillmentChannel,
+        
+                SalesChannel,
+                ShipServiceLevel,
+                
+                OrderTotal,
+                NumberOfItemsShipped,
+                NumberOfItemsUnshipped,
+        
+                PaymentMethod,
+                PaymentMethodDetails,
+                IsReplacementOrder,        
+                MarketplaceId,
+                ShipmentServiceLevelCategory,
+        
+                OrderType,        
+                EarliestShipDate,
+                LatestShipDate,
+                EarliestDeliveryDate,
+                LatestDeliveryDate,
+        
+                IsBusinessOrder,
+                IsPrime,
+                IsGlobalExpressEnabled,
+                IsPremiumOrder,
+                 IsSoldByAB,
+        
+                 IsIBA,
+                 FulfillmentSupplySourceId,
+                IsISPU,
+                IsAccessPointOrder,
+                HasAutomatedShippingSettings,
+        
+                EasyShipShipmentStatus,
+                ElectronicInvoiceStatus,
+               
+        
+              
+              } = order;
+        
+              const procedureCall = `CALL sp_add_update_order(?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,   ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?,?,?,?,?,  ?,?,?,?,?,  ?,?,?,?,@p1,@p2)`;
+              const values = [
+                client_code, // Client code
+                AmazonOrderId,               
+                PurchaseDate || null,
+                LastUpdateDate ||null,
+                OrderStatus || '',
+
+                FulfillmentChannel || '',
+                SalesChannel || '',
+                ShipServiceLevel || '',
+                OrderTotal?.CurrencyCode || '',
+                OrderTotal?.Amount || 0,
+               
+
+                NumberOfItemsShipped||0,
+                NumberOfItemsUnshipped||0,
+                PaymentMethod||'',
+                PaymentMethodDetails.standard||'',
+                IsReplacementOrder||false,
+
+                MarketplaceId || '',        
+                ShipmentServiceLevelCategory || '',
+                OrderType||'',
+                EarliestShipDate || null,
+                LatestShipDate || null,
+
+                EarliestDeliveryDate || null,
+                LatestDeliveryDate || null,
+                IsBusinessOrder || false,
+                IsPrime || false,
+                IsGlobalExpressEnabled||false,
+
+                IsPremiumOrder || false,
+                IsSoldByAB || false,
+                IsIBA ||false,
+                FulfillmentSupplySourceId||'',
+                IsISPU || false,
+
+                IsAccessPointOrder || false,
+                HasAutomatedShippingSettings ||0,
+                EasyShipShipmentStatus||'',
+                ElectronicInvoiceStatus||''
+                
+              ];
+        
+              await connection.execute(procedureCall, values);
+          }
+      
+          console.log('Order items inserted/updated successfully in the database.');
+
 
     // Return success response
     return {
